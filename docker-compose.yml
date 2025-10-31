@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  tokensim-api:
+    build: .
+    container_name: tokensim-rest-api
+    ports:
+      - "3443:3443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/home/ats/files
+    environment:
+      - JWT_SECRET=${JWT_SECRET:-your-secret-key-change-in-production}
+      - PORT=3443
+      - TOKENSIM_CONTAINER_NAME=ats-runtime
+      - VOLUME_PATH=/home/ats/files
+      - NODE_ENV=production
+    restart: unless-stopped
+

@@ -1,0 +1,7 @@
+192.168.202.202=thpobj02:rack
+192.168.202.203=thpobj05:rack
+192.168.202.204=thpobj04:rack
+192.168.202.211=ddpobj05:rack
+192.168.202.212=ddpobj02:rack
+192.168.202.214=ddpobj04:rack
+1.1.1.1_Logiq_dd13_dd13=cloudian-node5:dd13
