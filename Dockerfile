@@ -12,8 +12,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install all dependencies (including dev dependencies for build)
-# Set NODE_ENV to empty to ensure dev dependencies are installed
-RUN NODE_ENV= npm ci
+RUN npm ci --include=dev
 
 # Copy source code
 COPY . .
