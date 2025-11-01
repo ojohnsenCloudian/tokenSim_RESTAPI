@@ -12,13 +12,15 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install ALL dependencies (including dev)
+# Explicitly set NODE_ENV to ensure dev dependencies are installed
+ENV NODE_ENV=development
 RUN npm install
 
 # Copy source code
 COPY . .
 
-# Build TypeScript using direct path to tsc binary
-RUN node_modules/.bin/tsc
+# Verify TypeScript is installed and build
+RUN ls -la node_modules/.bin/tsc && node_modules/.bin/tsc
 
 # Remove dev dependencies after build
 RUN npm prune --production
