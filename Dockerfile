@@ -11,13 +11,13 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install all dependencies (including dev dependencies for build)
-RUN npm ci --include=dev
+# Install ALL dependencies (including dev)
+RUN npm install
 
 # Copy source code
 COPY . .
 
-# Build TypeScript
+# Build TypeScript using npm script (uses local tsc)
 RUN npm run build
 
 # Remove dev dependencies after build
