@@ -11,16 +11,20 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install ALL dependencies (including dev)
-# Explicitly set NODE_ENV to ensure dev dependencies are installed
-ENV NODE_ENV=development
-RUN npm install
+# Install dependencies - ensure dev dependencies are installed
+# Clear npm cache and install everything
+RUN npm cache clean --force && \
+    npm install --include=dev --loglevel=verbose
 
 # Copy source code
 COPY . .
 
-# Verify TypeScript is installed and build
-RUN ls -la node_modules/.bin/tsc && node_modules/.bin/tsc
+# Build TypeScript - verify it exists first, then build
+RUN if [ ! -f node_modules/.bin/tsc ]; then \
+        echo "TypeScript not found, installing..." && \
+        npm install typescript --save-dev; \
+    fi && \
+    node_modules/.bin/tsc
 
 # Remove dev dependencies after build
 RUN npm prune --production
@@ -30,4 +34,3 @@ EXPOSE 3443
 
 # Start server
 CMD ["npm", "start"]
-
