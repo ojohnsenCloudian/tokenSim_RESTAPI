@@ -15,4 +15,3 @@ export const config = {
 if (!config.apiToken || config.apiToken === 'your-api-token-change-in-production') {
   console.warn('⚠️  WARNING: Using default API_TOKEN. Change this in production!');
 }
-

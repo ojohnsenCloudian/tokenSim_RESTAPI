@@ -1,4 +1,4 @@
-// Simple token authentication middleware
+// Hardcoded token authentication middleware
 
 import { Request, Response, NextFunction } from 'express';
 import { config } from '../utils/config';
@@ -32,4 +32,3 @@ export const authenticateToken = (
   req.user = { userId: 'api-user' };
   next();
 };
-

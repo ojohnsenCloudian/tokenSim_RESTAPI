@@ -69,8 +69,8 @@ router.put(
     }
 
     const { customerName, projectId } = req.params;
-    
-    // Verify project exists
+    const configData: CreateConfigRequest = req.body;
+
     if (!(await fileManager.projectExists(customerName, projectId))) {
       throw new AppError(
         `Project '${projectId}' not found for customer '${customerName}'`,
@@ -78,27 +78,22 @@ router.put(
       );
     }
 
-    const configData: CreateConfigRequest = req.body;
-
-    // Build config.yaml with proper paths relative to container
-    const configYaml: ConfigYaml = {
+    // Build full config object with auto-populated paths
+    const fullConfig: ConfigYaml = {
       customer_name: configData.customer_name,
-      hss_ring_output: configData.hss_ring_output || 
-        `/home/ats/files/customers/${customerName}/projects/${projectId}/hsstool_ring.txt`,
-      hss_status_output: configData.hss_status_output || 
-        `/home/ats/files/customers/${customerName}/projects/${projectId}/hsstool_status.txt`,
+      hss_ring_output: fileManager.getRingPath(customerName, projectId),
+      hss_status_output: fileManager.getStatusPath(customerName, projectId),
       dc_for_nodes: configData.dc_for_nodes,
       nodes_to_add: configData.nodes_to_add,
       region: configData.region,
       cumulative: configData.cumulative || 'false',
-      output_dir: configData.output_dir || 
-        `/home/ats/files/customers/${customerName}/projects/${projectId}/output/`,
+      output_dir: `${fileManager.getOutputPath(customerName, projectId)}/`,
     };
 
     // Convert to YAML string
-    const yamlString = yaml.stringify(configYaml);
-    
-    // Write config file
+    const yamlString = yaml.stringify(fullConfig);
+
+    // Write to file
     const configPath = fileManager.getConfigPath(customerName, projectId);
     await fileManager.writeFile(configPath, yamlString);
 
@@ -108,7 +103,7 @@ router.put(
       data: {
         customerName,
         projectId,
-        config: configYaml,
+        config: fullConfig,
         yaml: yamlString,
       },
     });
@@ -128,8 +123,16 @@ router.get(
     }
 
     const { customerName, projectId } = req.params;
-    const configPath = fileManager.getConfigPath(customerName, projectId);
 
+    if (!(await fileManager.projectExists(customerName, projectId))) {
+      throw new AppError(
+        `Project '${projectId}' not found for customer '${customerName}'`,
+        404
+      );
+    }
+
+    const configPath = fileManager.getConfigPath(customerName, projectId);
+    
     if (!(await fileManager.fileExists(configPath))) {
       throw new AppError(
         `Config file not found for project '${projectId}'`,
@@ -137,20 +140,19 @@ router.get(
       );
     }
 
-    const yamlContent = await fileManager.readFile(configPath);
-    const configData = yaml.parse(yamlContent) as ConfigYaml;
+    const yamlString = await fileManager.readFile(configPath);
+    const config = yaml.parse(yamlString) as ConfigYaml;
 
     res.json({
       success: true,
       data: {
         customerName,
         projectId,
-        config: configData,
-        yaml: yamlContent,
+        config,
+        yaml: yamlString,
       },
     });
   })
 );
 
 export default router;
-

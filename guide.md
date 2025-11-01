@@ -1,197 +1,447 @@
-# 🧠 Automatic Token Simulator (ATS)
+# TokenSim REST API - Docker Deployment Guide
 
-**Automatic Token Simulator (ATS)** is a tool that automatically attempts cluster expansion with the most optimal configuration.  
-It allows a single configuration file to run tens or even hundreds of simulations with one command.
+Complete guide for deploying the TokenSim REST API Docker container.
 
-ATS simplifies the process by calculating both the **optimal number of nodes** to be added and the **storage capacity** for the new nodes.
+## Prerequisites
 
----
+- Docker and Docker Compose installed
+- Git installed (for cloning repository)
+- Access to tokenSim container (`ats-runtime`) running
+- Port 3443 available
+- Directory `/opt/tokensim/data` for shared volume
 
-## ⚙️ Overview
+## Step-by-Step Deployment
 
-ATS is distributed as a single **Docker image** containing everything you need to run simulations — fully preconfigured and operational with just two commands.
-
----
-
-## 🛠️ Setting Up the Tool
-
-### 1. Load the Docker Image
-
-Load the image into your local Docker repository:
+### Step 1: Clone Repository
 
 ```bash
-docker load -i ./ats-runtime-0.0.1.tar.gz
+# On your server
+cd /opt/tokensim
+git clone <your-repo-url> tokenSim_RESTAPI
+cd tokenSim_RESTAPI
 ```
 
----
-
-### 2. Prepare a Directory
-
-ATS writes files to a local directory.  
-You’ll need to create one with **full permissions (777)**.
-
-#### Windows
-```bash
-mkdir %USERPROFILE%\Documents\ats
-icacls "%USERPROFILE%\Documents\ats" /grant Everyone:F /T
-```
-
-#### Linux
-```bash
-mkdir $HOME/Documents/ats
-sudo chmod -R 777 $HOME/Documents/ats
-```
-
-#### macOS
-```bash
-mkdir ~/Documents/ats
-sudo chmod -R 777 ~/Documents/ats
-```
-
----
-
-### 3. Start the Docker Container
+### Step 2: Generate API Token
 
 ```bash
-docker run --detach --volume $HOME/Documents/ats:/home/ats/files \
--it --name ats-runtime --hostname="runtime" ats-runtime:0.0.1 sleep infinity
+# Generate a secure random token
+API_TOKEN=$(openssl rand -base64 32)
+echo "Generated API Token: $API_TOKEN"
+
+# IMPORTANT: Save this token - you'll need it for API calls!
 ```
 
----
-
-### 4. Start a Bash Shell
-
-To enter the container:
+### Step 3: Create .env File
 
 ```bash
-docker exec -it ats-runtime /bin/bash
+# Create .env file with generated token
+cat > .env << EOF
+API_TOKEN=$API_TOKEN
+PORT=3443
+TOKENSIM_CONTAINER_NAME=ats-runtime
+VOLUME_PATH=/home/ats/files
+NODE_ENV=production
+EOF
+
+# Verify .env file
+cat .env
 ```
 
----
-
-## 🚀 Using ATS
-
-Once inside the container, check that ATS is available:
+### Step 4: Ensure Data Directory Exists
 
 ```bash
-ats --help
+# Create data directory if it doesn't exist
+mkdir -p /opt/tokensim/data
+chmod 755 /opt/tokensim/data
 ```
 
-**Output Example:**
-
-```
-Automatic Token Simulator (ATS)
-Usage:
-  ats [command]
-Available Commands:
-  add         Add nodes to a cluster
-  manual      Manual run of token simulator
-```
-
----
-
-## 🧩 Key Commands
-
-ATS has two main commands:
-
-- `manual` — Runs the simulator manually (old format)
-- `add` — Runs automated simulation with optimization
-
----
-
-## 🧰 Command: `manual`
-
-Runs ATS manually using the legacy configuration format.
-
-Example config file:  
-`/home/ats/docs/ManualConfigExample.yaml`
-
-```yaml
-customer_name: "test"
-hss_ring_output: "/home/ats/files/ref/hsstool_ring.txt"
-hss_status_output: "/home/ats/files/ref/hsstool_status.txt"
-dc_for_nodes:
-  - "dc-1;3;129;3,1;rack-1:3"
-nodes_to_add:
-  - "cloudian-node4:dc-1:rack-1"
-  - "cloudian-node5:dc-1:rack-1"
-  - "cloudian-node6:dc-1:rack-1"
-region: "region-1"
-cumulative: "false"
-output_dir: "/home/ats/files/ref/gen/"
-```
-
-### Field Explanations
-
-| Field | Description |
-|-------|--------------|
-| `customer_name` | Customer name |
-| `hss_ring_output` | Path to HSS tool ring output file |
-| `hss_status_output` | Path to HSS tool status output file |
-| `dc_for_nodes` | Data center configuration |
-| `nodes_to_add` | List of nodes to be added |
-| `region` | Cluster region |
-| `cumulative` | Boolean for cumulative addition |
-| `output_dir` | Directory for generated outputs |
-
-> ⚠️ All paths must be **relative to the Docker container**, not the host.
-
----
-
-### Run Example
+### Step 5: Build Docker Image
 
 ```bash
-ats manual -c ./files/data/ref/conf.yaml
+# Build the image (fast with package-lock.json)
+docker compose build
+
+# Expected output: Successfully built image
 ```
 
-Example output:
+### Step 6: Start Container
 
-```
-****************** Start Customer Cluster Expansion Information ******************
-Customer Name - test
-Customer Region - region-1
-...
-For this storage policy, the simulation projects a good data balance.
-```
+```bash
+# Start the container in detached mode
+docker compose up -d
 
----
+# Verify it's running
+docker compose ps
 
-## 🤖 Command: `add`
-
-The `add` command provides automation and optimization capabilities.
-
-Example config:  
-`/home/ats/docs/AddConfigExample.yaml`
-
-```yaml
-name: Customer-0
-preferredNumOfNodes: 3
-preferredNodeRange: 3
-preferredNodeRangeStep: 1
-preferredNumOfTokens: 50
-preferredTokenRange: 3
-preferredTokenStep: 1
-preferredNodeCapacity: 150
-preferredNodeCapacityRange: 40
-preferredNodeCapacityStep: 10
-exclude:
-  - 10.105.23.14
-  - 10.123.41.24
-ringFile: "/home/ats/files/ref/hsstool_ring.txt"
-statusFile: "/home/ats/files/ref/hsstool_status.txt"
-region: region-1
-datacenters:
-  - name: dc-1
-    rack: "rack-1"
-    storagePolicies:
-      - name: "3"
-        chunksInDC: 2
-      - name: "3+2"
-        chunksInDC: 3
-  - name: dc-2
-    storagePolicies:
-      - name: "3+2"
-outputDir: /home/ats/files/add/gen
+# Check logs to ensure it started correctly
+docker compose logs tokensim-api --tail 50
 ```
 
----
+You should see output like:
+```
+🚀 TokenSim REST API server running on port 3443
+📁 Volume path: /home/ats/files
+🐳 TokenSim container: ats-runtime
+🔐 API Token authentication: enabled
+```
+
+### Step 7: Verify Deployment
+
+```bash
+# Test health endpoint (no auth required)
+curl http://localhost:3443/health
+
+# Expected response:
+# {"success":true,"data":{"status":"ok","timestamp":"...","service":"tokensim-rest-api","version":"1.0.0"}}
+
+# Get your API token from .env
+API_TOKEN=$(grep API_TOKEN .env | cut -d '=' -f2)
+
+# Test API authentication
+curl -X GET http://localhost:3443/api/customers \
+  -H "Authorization: Bearer $API_TOKEN"
+
+# Expected response: {"success":true,"data":{"customers":[],"count":0}}
+```
+
+## Complete Deployment Script
+
+Save this as `deploy.sh` and run it:
+
+```bash
+#!/bin/bash
+
+set -e  # Exit on error
+
+echo "=== TokenSim API Docker Deployment ==="
+echo ""
+
+# Configuration
+REPO_URL="<your-repo-url>"  # UPDATE THIS!
+INSTALL_DIR="/opt/tokensim"
+APP_DIR="$INSTALL_DIR/tokenSim_RESTAPI"
+
+# Step 1: Clone or update repository
+if [ -d "$APP_DIR" ]; then
+    echo "Repository exists, updating..."
+    cd "$APP_DIR"
+    git pull
+else
+    echo "Cloning repository..."
+    cd "$INSTALL_DIR"
+    git clone "$REPO_URL" tokenSim_RESTAPI
+    cd "$APP_DIR"
+fi
+
+# Step 2: Generate API token
+echo "Generating API token..."
+API_TOKEN=$(openssl rand -base64 32)
+echo "API Token: $API_TOKEN"
+echo ""
+
+# Step 3: Create .env file
+echo "Creating .env file..."
+cat > .env << EOF
+API_TOKEN=$API_TOKEN
+PORT=3443
+TOKENSIM_CONTAINER_NAME=ats-runtime
+VOLUME_PATH=/home/ats/files
+NODE_ENV=production
+EOF
+
+# Step 4: Create data directory
+echo "Creating data directory..."
+mkdir -p /opt/tokensim/data
+chmod 755 /opt/tokensim/data
+
+# Step 5: Build Docker image
+echo "Building Docker image..."
+docker compose down || true
+docker compose build
+
+if [ $? -ne 0 ]; then
+    echo "✗ Build failed!"
+    exit 1
+fi
+
+# Step 6: Start container
+echo "Starting container..."
+docker compose up -d
+sleep 5
+
+# Step 7: Verify deployment
+echo ""
+echo "=== Verification ==="
+docker compose ps
+
+echo ""
+echo "=== Health Check ==="
+curl -s http://localhost:3443/health | jq '.' || curl -s http://localhost:3443/health
+
+echo ""
+echo "=== API Token Test ==="
+TEST_RESPONSE=$(curl -s -X GET http://localhost:3443/api/customers \
+  -H "Authorization: Bearer $API_TOKEN")
+echo "$TEST_RESPONSE" | jq '.' || echo "$TEST_RESPONSE"
+
+echo ""
+echo "=== Deployment Complete ==="
+echo "API Token: $API_TOKEN"
+echo "Save this token for your API calls!"
+echo ""
+echo "Example usage:"
+echo "curl -X GET http://localhost:3443/api/customers \\"
+echo "  -H \"Authorization: Bearer $API_TOKEN\""
+```
+
+Make it executable and run:
+```bash
+chmod +x deploy.sh
+./deploy.sh
+```
+
+## Docker Commands Reference
+
+### Start Container
+```bash
+docker compose up -d
+```
+
+### Stop Container
+```bash
+docker compose stop
+# Or stop and remove
+docker compose down
+```
+
+### View Logs
+```bash
+# All logs
+docker compose logs tokensim-api
+
+# Follow logs (like tail -f)
+docker compose logs -f tokensim-api
+
+# Last 50 lines
+docker compose logs tokensim-api --tail 50
+```
+
+### Restart Container
+```bash
+# Restart without rebuilding
+docker compose restart
+
+# Restart with rebuild
+docker compose down
+docker compose build
+docker compose up -d
+```
+
+### Check Container Status
+```bash
+# Running containers
+docker compose ps
+
+# All containers (including stopped)
+docker compose ps -a
+
+# Container details
+docker inspect tokensim-rest-api
+```
+
+### Execute Commands in Container
+```bash
+# Enter container shell
+docker compose exec tokensim-api sh
+
+# Check environment variables
+docker compose exec tokensim-api env | grep API_TOKEN
+
+# Check if files are accessible
+docker compose exec tokensim-api ls -la /home/ats/files
+```
+
+## Updating Existing Deployment
+
+### Pull Latest Code and Rebuild
+
+```bash
+cd /opt/tokensim/tokenSim_RESTAPI
+
+# Pull latest changes
+git pull
+
+# Rebuild and restart
+docker compose down
+docker compose build
+docker compose up -d
+
+# Verify
+docker compose logs tokensim-api --tail 20
+```
+
+### Update Environment Variables
+
+```bash
+# Edit .env file
+nano .env
+
+# Restart container to pick up changes
+docker compose restart
+
+# Or recreate container
+docker compose down
+docker compose up -d
+```
+
+## Troubleshooting
+
+### Build Fails
+
+```bash
+# Check Docker is running
+docker info
+
+# Check disk space
+df -h
+
+# Clean Docker cache
+docker system prune -f
+
+# Rebuild without cache
+docker compose build --no-cache
+```
+
+### Container Won't Start
+
+```bash
+# Check logs for errors
+docker compose logs tokensim-api
+
+# Check port availability
+netstat -tlnp | grep 3443
+
+# Check container status
+docker compose ps -a
+
+# Check Docker daemon
+systemctl status docker
+```
+
+### Authentication Fails
+
+```bash
+# Verify token in container
+docker compose exec tokensim-api env | grep API_TOKEN
+
+# Verify token matches .env
+cat .env | grep API_TOKEN
+
+# Test with exact token
+TOKEN=$(grep API_TOKEN .env | cut -d '=' -f2)
+curl -X GET http://localhost:3443/api/customers \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### TokenSim Container Not Found
+
+```bash
+# Check if ats-runtime container exists
+docker ps -a | grep ats-runtime
+
+# If not running, start it
+docker start ats-runtime
+
+# Verify it's running
+docker ps | grep ats-runtime
+```
+
+### Permission Issues
+
+```bash
+# Check data directory permissions
+ls -ld /opt/tokensim/data
+
+# Fix permissions if needed
+chmod 755 /opt/tokensim/data
+chown -R $(whoami):$(whoami) /opt/tokensim/data
+```
+
+### Cannot Access Docker Socket
+
+```bash
+# Check Docker socket permissions
+ls -l /var/run/docker.sock
+
+# Add user to docker group (if needed)
+sudo usermod -aG docker $USER
+# Then logout and login again
+```
+
+## Environment Variables
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `API_TOKEN` | Authentication token | `your-api-token-change-in-production` | Yes |
+| `PORT` | API server port | `3443` | No |
+| `TOKENSIM_CONTAINER_NAME` | TokenSim container name | `ats-runtime` | No |
+| `VOLUME_PATH` | Shared volume path in container | `/home/ats/files` | No |
+| `NODE_ENV` | Node environment | `production` | No |
+
+## Container Details
+
+- **Image**: Built from `Dockerfile` (Node.js 20 Alpine)
+- **Port**: 3443 (exposed to host)
+- **Volumes**:
+  - `/var/run/docker.sock` → Docker socket (for docker exec)
+  - `/opt/tokensim/data` → `/home/ats/files` (shared volume)
+- **Restart Policy**: `unless-stopped`
+
+## Security Considerations
+
+1. **API Token**: Use a strong, randomly generated token (32+ characters)
+2. **Network**: Consider restricting API access to internal network only
+3. **HTTPS**: For production, use HTTPS/TLS reverse proxy (nginx, Traefik)
+4. **Firewall**: Only expose port 3443 if needed externally
+5. **Token Storage**: Keep `.env` file secure (600 permissions: `chmod 600 .env`)
+6. **Docker Socket**: Ensure Docker socket permissions are secure
+
+## File Structure
+
+```
+/opt/tokensim/
+├── tokenSim_RESTAPI/          # API repository
+│   ├── src/                   # Source code
+│   ├── dist/                  # Compiled JavaScript
+│   ├── .env                   # Environment variables (API_TOKEN)
+│   ├── docker-compose.yml     # Docker Compose config
+│   ├── Dockerfile             # Docker image definition
+│   └── package.json           # Dependencies
+└── data/                      # Shared volume for API and tokenSim
+    └── customers/             # Created by API
+        └── <customer-name>/
+            └── projects/
+                └── <project-id>/
+                    ├── config.yaml
+                    ├── hsstool_status.txt
+                    ├── hsstool_ring.txt
+                    └── output/
+```
+
+## Next Steps
+
+After successful deployment:
+
+1. Test all API endpoints using the API token
+2. Configure your web application to use the API
+3. Set up monitoring/logging if needed
+4. Configure backups for `/opt/tokensim/data`
+5. Set up reverse proxy with HTTPS for production
+
+## Support
+
+For issues:
+- Check container logs: `docker compose logs tokensim-api`
+- Verify configuration: `cat .env`
+- Test connectivity: `curl http://localhost:3443/health`
+- Check Docker: `docker compose ps`

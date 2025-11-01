@@ -58,7 +58,7 @@ router.get(
   })
 );
 
-// POST /api/customers - Create customer folder
+// POST /api/customers - Create customer
 router.post(
   '/',
   authenticateToken,
@@ -70,9 +70,14 @@ router.post(
     }
 
     const { customerName } = req.body;
+
+    if (await fileManager.customerExists(customerName)) {
+      throw new AppError(`Customer '${customerName}' already exists`, 409);
+    }
+
     await fileManager.createCustomer(customerName);
 
-    res.status(201).json({
+    res.json({
       success: true,
       message: `Customer '${customerName}' created successfully`,
       data: {
@@ -83,7 +88,7 @@ router.post(
   })
 );
 
-// GET /api/customers/:customerName - Get customer info
+// GET /api/customers/:customerName - Get customer details
 router.get(
   '/:customerName',
   authenticateToken,
@@ -95,13 +100,11 @@ router.get(
     }
 
     const { customerName } = req.params;
-    const exists = await fileManager.customerExists(customerName);
 
-    if (!exists) {
+    if (!(await fileManager.customerExists(customerName))) {
       throw new AppError(`Customer '${customerName}' not found`, 404);
     }
 
-    // Get project count
     const projects = await fileManager.listProjects(customerName);
 
     res.json({
@@ -131,6 +134,11 @@ router.delete(
     }
 
     const { customerName } = req.params;
+
+    if (!(await fileManager.customerExists(customerName))) {
+      throw new AppError(`Customer '${customerName}' not found`, 404);
+    }
+
     await fileManager.deleteCustomer(customerName);
 
     res.json({
@@ -155,26 +163,33 @@ router.patch(
       throw new AppError(errors.array()[0].msg, 400);
     }
 
-    const { customerName: oldCustomerName } = req.params;
-    const { customerName: newCustomerName } = req.body;
+    const { customerName: oldName } = req.params;
+    const { customerName: newName } = req.body;
 
-    if (!newCustomerName) {
+    if (!newName) {
       throw new AppError('New customer name is required', 400);
     }
 
-    await fileManager.renameCustomer(oldCustomerName, newCustomerName);
+    if (!(await fileManager.customerExists(oldName))) {
+      throw new AppError(`Customer '${oldName}' not found`, 404);
+    }
+
+    if (await fileManager.customerExists(newName)) {
+      throw new AppError(`Customer '${newName}' already exists`, 409);
+    }
+
+    await fileManager.renameCustomer(oldName, newName);
 
     res.json({
       success: true,
-      message: `Customer '${oldCustomerName}' renamed to '${newCustomerName}' successfully`,
+      message: `Customer '${oldName}' renamed to '${newName}' successfully`,
       data: {
-        oldCustomerName,
-        newCustomerName,
-        path: fileManager.getCustomerPath(newCustomerName),
+        oldCustomerName: oldName,
+        newCustomerName: newName,
+        path: fileManager.getCustomerPath(newName),
       },
     });
   })
 );
 
 export default router;
-

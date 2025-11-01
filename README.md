@@ -10,7 +10,7 @@ REST API for TokenSim CLI tool that enables programmatic access to manual mode s
 - File uploads (status and ring files)
 - Simulation execution via Docker exec
 - Output parsing (converts .txt files to JSON)
-- JWT authentication
+- Hardcoded token authentication
 
 ## Prerequisites
 

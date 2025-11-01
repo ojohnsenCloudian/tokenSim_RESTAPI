@@ -59,11 +59,14 @@ router.get(
     }
 
     const { customerName } = req.params;
-    const projectIds = await fileManager.listProjects(customerName);
-    
-    // Get details for each project
-    const projects = await Promise.all(
-      projectIds.map(async (projectId) => {
+
+    if (!(await fileManager.customerExists(customerName))) {
+      throw new AppError(`Customer '${customerName}' not found`, 404);
+    }
+
+    const projects = await fileManager.listProjects(customerName);
+    const projectsWithStatus = await Promise.all(
+      projects.map(async (projectId) => {
         const configExists = await fileManager.fileExists(
           fileManager.getConfigPath(customerName, projectId)
         );
@@ -95,14 +98,14 @@ router.get(
       success: true,
       data: {
         customerName,
-        projects,
+        projects: projectsWithStatus,
       },
       count: projects.length,
     });
   })
 );
 
-// POST /api/customers/:customerName/projects - Create project folder
+// POST /api/customers/:customerName/projects - Create project
 router.post(
   '/',
   authenticateToken,
@@ -116,9 +119,21 @@ router.post(
 
     const { customerName } = req.params;
     const { projectId } = req.body;
+
+    if (!(await fileManager.customerExists(customerName))) {
+      throw new AppError(`Customer '${customerName}' not found`, 404);
+    }
+
+    if (await fileManager.projectExists(customerName, projectId)) {
+      throw new AppError(
+        `Project '${projectId}' already exists for customer '${customerName}'`,
+        409
+      );
+    }
+
     await fileManager.createProject(customerName, projectId);
 
-    res.status(201).json({
+    res.json({
       success: true,
       message: `Project '${projectId}' created successfully for customer '${customerName}'`,
       data: {
@@ -130,7 +145,7 @@ router.post(
   })
 );
 
-// GET /api/customers/:customerName/projects/:projectId - Get project info
+// GET /api/customers/:customerName/projects/:projectId - Get project details
 router.get(
   '/:projectId',
   authenticateToken,
@@ -143,16 +158,14 @@ router.get(
     }
 
     const { customerName, projectId } = req.params;
-    const exists = await fileManager.projectExists(customerName, projectId);
 
-    if (!exists) {
+    if (!(await fileManager.projectExists(customerName, projectId))) {
       throw new AppError(
         `Project '${projectId}' not found for customer '${customerName}'`,
         404
       );
     }
 
-    // Check if files exist
     const configExists = await fileManager.fileExists(
       fileManager.getConfigPath(customerName, projectId)
     );
@@ -162,14 +175,17 @@ router.get(
     const ringExists = await fileManager.fileExists(
       fileManager.getRingPath(customerName, projectId)
     );
-
-    // Check if output directory has files
     const outputExists = await fileManager.fileExists(
       fileManager.getOutputPath(customerName, projectId)
     );
-    const outputFiles = outputExists 
-      ? await fileManager.listFiles(fileManager.getOutputPath(customerName, projectId))
-      : [];
+
+    let outputFileCount = 0;
+    if (outputExists) {
+      const outputFiles = await fileManager.listFiles(
+        fileManager.getOutputPath(customerName, projectId)
+      );
+      outputFileCount = outputFiles.length;
+    }
 
     res.json({
       success: true,
@@ -181,10 +197,10 @@ router.get(
           config: configExists,
           status: statusExists,
           ring: ringExists,
-          output: outputFiles.length > 0,
+          output: outputExists,
         },
         ready: configExists && statusExists && ringExists,
-        outputFileCount: outputFiles.length,
+        outputFileCount,
       },
     });
   })
@@ -203,6 +219,14 @@ router.delete(
     }
 
     const { customerName, projectId } = req.params;
+
+    if (!(await fileManager.projectExists(customerName, projectId))) {
+      throw new AppError(
+        `Project '${projectId}' not found for customer '${customerName}'`,
+        404
+      );
+    }
+
     await fileManager.deleteProject(customerName, projectId);
 
     res.json({
@@ -236,6 +260,20 @@ router.patch(
       throw new AppError('New project ID is required', 400);
     }
 
+    if (!(await fileManager.projectExists(customerName, oldProjectId))) {
+      throw new AppError(
+        `Project '${oldProjectId}' not found for customer '${customerName}'`,
+        404
+      );
+    }
+
+    if (await fileManager.projectExists(customerName, newProjectId)) {
+      throw new AppError(
+        `Project '${newProjectId}' already exists for customer '${customerName}'`,
+        409
+      );
+    }
+
     await fileManager.renameProject(customerName, oldProjectId, newProjectId);
 
     res.json({
@@ -252,4 +290,3 @@ router.patch(
 );
 
 export default router;
-

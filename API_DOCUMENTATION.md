@@ -2,6 +2,8 @@
 
 Complete API documentation with curl examples for all endpoints.
 
+> **Note**: For deployment instructions, see [guide.md](./guide.md)
+
 ## Table of Contents
 
 - [Authentication](#authentication)
@@ -679,7 +681,7 @@ All error responses follow this format:
 ### Common Error Codes
 
 - **400 Bad Request** - Invalid request data or validation error
-- **401 Unauthorized** - Missing or invalid JWT token
+- **401 Unauthorized** - Missing or invalid API token
 - **404 Not Found** - Resource (customer, project, file) not found
 - **409 Conflict** - Resource already exists (e.g., customer/project name taken)
 - **500 Internal Server Error** - Server error
@@ -753,7 +755,7 @@ Here's a complete example workflow from start to finish:
 
 ```bash
 # 1. Set your token
-export TOKEN="your-jwt-token-here"
+export TOKEN="your-api-token-here"
 
 # 2. Create customer
 curl -X POST http://localhost:3443/api/customers \

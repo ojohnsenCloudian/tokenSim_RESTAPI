@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   tokensim-api:
     build: .
@@ -8,7 +6,7 @@ services:
       - "3443:3443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./data:/home/ats/files
+      - /opt/tokensim/data:/home/ats/files
     environment:
       - API_TOKEN=${API_TOKEN:-your-api-token-change-in-production}
       - PORT=3443

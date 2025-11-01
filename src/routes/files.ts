@@ -52,7 +52,6 @@ router.put(
     const { customerName, projectId } = req.params;
     const { content } = req.body;
 
-    // Verify project exists
     if (!(await fileManager.projectExists(customerName, projectId))) {
       throw new AppError(
         `Project '${projectId}' not found for customer '${customerName}'`,
@@ -93,7 +92,6 @@ router.put(
     const { customerName, projectId } = req.params;
     const { content } = req.body;
 
-    // Verify project exists
     if (!(await fileManager.projectExists(customerName, projectId))) {
       throw new AppError(
         `Project '${projectId}' not found for customer '${customerName}'`,
@@ -119,4 +117,3 @@ router.put(
 );
 
 export default router;
-

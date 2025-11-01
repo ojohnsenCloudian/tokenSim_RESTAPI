@@ -1,24 +1,21 @@
 // Error handling utilities
 
-import { Response } from 'express';
-import { ApiError } from '../types';
-
 export class AppError extends Error {
   statusCode: number;
-  
+
   constructor(message: string, statusCode: number = 500) {
     super(message);
-    this.statusCode = statusCode;
     this.name = 'AppError';
+    this.statusCode = statusCode;
     Error.captureStackTrace(this, this.constructor);
   }
 }
 
-export const sendError = (res: Response, error: Error | AppError): void => {
+export const sendError = (res: any, error: Error | AppError): void => {
   const statusCode = error instanceof AppError ? error.statusCode : 500;
   const message = error.message || 'Internal server error';
-  
-  const apiError = {
+
+  res.status(statusCode).json({
     success: false,
     error: {
       name: error.name || 'Error',
@@ -26,9 +23,7 @@ export const sendError = (res: Response, error: Error | AppError): void => {
       statusCode,
     },
     timestamp: new Date().toISOString(),
-  };
-  
-  res.status(statusCode).json(apiError);
+  });
 };
 
 export const handleAsync = (fn: Function) => {
@@ -36,4 +31,3 @@ export const handleAsync = (fn: Function) => {
     Promise.resolve(fn(req, res, next)).catch(next);
   };
 };
-

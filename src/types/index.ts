@@ -1,4 +1,4 @@
-// Type definitions for TokenSim REST API
+// TypeScript type definitions
 
 export interface ConfigYaml {
   customer_name: string;
@@ -7,7 +7,7 @@ export interface ConfigYaml {
   dc_for_nodes: string[];
   nodes_to_add: string[];
   region: string;
-  cumulative: string;
+  cumulative?: string;
   output_dir: string;
 }
 
@@ -20,50 +20,44 @@ export interface CreateProjectRequest {
 }
 
 export interface UpdateCustomerRequest {
-  customerName?: string;
+  customerName: string;
 }
 
 export interface UpdateProjectRequest {
-  projectId?: string;
+  projectId: string;
 }
 
 export interface CreateConfigRequest {
   customer_name: string;
-  hss_ring_output?: string;
-  hss_status_output?: string;
   dc_for_nodes: string[];
   nodes_to_add: string[];
   region: string;
   cumulative?: string;
-  output_dir?: string;
 }
 
 export interface ApiError {
-  error: string;
+  name: string;
   message: string;
   statusCode: number;
 }
 
+export interface ParsedFile {
+  filename: string;
+  type: string;
+  data: any;
+  metadata?: {
+    lineCount?: number;
+    tokenCount?: number;
+    ipCount?: number;
+    format?: string;
+    parseError?: string;
+    [key: string]: any;
+  };
+}
+
 export interface SimulationOutput {
   parsed: {
-    files: Array<{
-      filename: string;
-      type: string;
-      data: any;
-      metadata?: {
-        lineCount?: number;
-        tokenCount?: number;
-        ipCount?: number;
-        format?: string;
-        parseError?: string;
-      };
-    }>;
-    organized: Record<string, Array<{
-      filename: string;
-      type: string;
-      data: any;
-      metadata?: any;
-    }>>;
+    files: ParsedFile[];
     summary: {
       totalFiles: number;
       txtFiles: number;
@@ -75,10 +69,10 @@ export interface SimulationOutput {
     nodes: Array<{
       ip: string;
       name: string;
-      hostname: string | null;
-      datacenter: string | null;
-      region: string;
-      rack: string;
+      hostname: string;
+      datacenter: string;
+      region?: string;
+      rack?: string;
       tokens: string[];
       tokenCount: number;
     }>;
@@ -95,4 +89,3 @@ export interface SimulationOutput {
     };
   };
 }
-

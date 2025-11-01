@@ -1,24 +1,9 @@
-// Output parser service - converts .txt files to JSON
+// Output file parsing service
 
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import { FileManager } from './fileManager';
-import { SimulationOutput } from '../types';
-import { AppError } from '../utils/errors';
-
-interface ParsedFile {
-  filename: string;
-  type: string;
-  data: any;
-  metadata?: {
-    lineCount?: number;
-    tokenCount?: number;
-    ipCount?: number;
-    format?: string;
-    parseError?: string;
-    [key: string]: any;
-  };
-}
+import { ParsedFile, SimulationOutput } from '../types';
 
 export class OutputParser {
   private fileManager: FileManager;
@@ -27,273 +12,179 @@ export class OutputParser {
     this.fileManager = new FileManager();
   }
 
-  /**
-   * Detect file type based on filename
-   */
   private detectFileType(filename: string): string {
-    const lowerFilename = filename.toLowerCase();
+    const lower = filename.toLowerCase();
     
-    if (lowerFilename.includes('hostname')) {
-      return 'hostname';
-    }
-    if (lowerFilename.includes('tokenmap')) {
-      return 'tokenmap';
-    }
-    if (lowerFilename.includes('token') && lowerFilename.includes('emea')) {
-      return 'emea_token';
-    }
-    if (lowerFilename.includes('dc') && lowerFilename.includes('emea')) {
-      return 'emea_dc';
-    }
-    if (lowerFilename.includes('dc') && !lowerFilename.includes('emea')) {
-      return 'dc';
-    }
-    if (lowerFilename.includes('all-tokens')) {
-      return 'all_tokens';
-    }
-    // IP address files: 192.168.202.212.txt or 1.1.1.1_Logiq_th2_th2.txt
-    if (/^\d+\.\d+\.\d+\.\d+\.txt$/i.test(filename)) {
-      return 'ip_tokens';
-    }
-    if (/^\d+\.\d+\.\d+\.\d+_/i.test(filename)) {
-      return 'ip_tokens';
-    }
+    if (lower.includes('hostname')) return 'hostname';
+    if (lower.includes('dc') || lower.includes('datacenter')) return 'dc';
+    if (lower.includes('tokenmap')) return 'tokenmap';
+    if (lower.includes('emea_token')) return 'emea_token';
+    if (lower.includes('all_tokens')) return 'all_tokens';
+    if (lower.includes('ip_tokens') || /^\d+\.\d+\.\d+\.\d+/.test(filename)) return 'ip_tokens';
+    if (lower.includes('token_list')) return 'token_list';
+    if (lower.endsWith('.json')) return 'json';
     
-    return 'token_list';
+    return 'unknown';
   }
 
-  /**
-   * Parse hostname file (IP=hostname:rack)
-   */
   private parseHostname(content: string): any {
-    const lines = content.trim().split('\n').filter(line => line.trim());
-    const result: Record<string, string> = {};
+    const lines = content.split('\n').filter(line => line.trim());
+    const hostnames: Record<string, string> = {};
     
-    lines.forEach(line => {
-      const [key, value] = line.split('=');
-      if (key && value) {
-        result[key.trim()] = value.trim();
+    for (const line of lines) {
+      const parts = line.split(':').map(p => p.trim());
+      if (parts.length >= 2) {
+        const ip = parts[0];
+        const hostname = parts.slice(1).join(':');
+        hostnames[ip] = hostname;
       }
-    });
+    }
     
-    return {
-      format: 'key_value',
-      mappings: result,
-      entries: Object.keys(result).map(ip => ({
-        ip,
-        hostname: result[ip].split(':')[0],
-        rack: result[ip].split(':')[1] || null,
-      })),
-    };
+    return { hostnames, format: 'ip:hostname' };
   }
 
-  /**
-   * Parse datacenter file (dc=IP1,IP2,IP3)
-   */
   private parseDatacenter(content: string): any {
-    const lines = content.trim().split('\n').filter(line => line.trim());
-    const result: Record<string, string[]> = {};
+    const lines = content.split('\n').filter(line => line.trim());
+    const datacenters: Record<string, string[]> = {};
     
-    lines.forEach(line => {
-      const [dc, ips] = line.split('=');
-      if (dc && ips) {
-        result[dc.trim()] = ips.split(',').map(ip => ip.trim()).filter(ip => ip);
+    for (const line of lines) {
+      const parts = line.split(':').map(p => p.trim());
+      if (parts.length >= 2) {
+        const dc = parts[0];
+        const ips = parts.slice(1).join(':').split(',').map(ip => ip.trim());
+        datacenters[dc] = ips;
       }
-    });
+    }
     
-    return {
-      format: 'datacenter_mapping',
-      datacenters: result,
-      entries: Object.keys(result).map(dc => ({
-        datacenter: dc,
-        ips: result[dc],
-        ipCount: result[dc].length,
-      })),
-    };
+    return { datacenters, format: 'dc:ip1,ip2,...' };
   }
 
-  /**
-   * Parse tokenmap file (token=IP,)
-   */
   private parseTokenmap(content: string): any {
-    const lines = content.trim().split('\n').filter(line => line.trim());
+    const lines = content.split('\n').filter(line => line.trim());
     const mappings: Array<{ token: string; ip: string }> = [];
     
-    lines.forEach(line => {
-      const match = line.match(/^(\d+)=([^,]+)/);
-      if (match) {
+    for (const line of lines) {
+      const parts = line.split(/\s+/).filter(p => p.trim());
+      if (parts.length >= 2) {
         mappings.push({
-          token: match[1],
-          ip: match[2].trim(),
+          token: parts[0],
+          ip: parts[1],
         });
       }
-    });
+    }
     
-    // Group by IP
-    const byIp: Record<string, string[]> = {};
-    mappings.forEach(m => {
-      if (!byIp[m.ip]) {
-        byIp[m.ip] = [];
-      }
-      byIp[m.ip].push(m.token);
-    });
-    
-    return {
-      format: 'token_to_ip',
-      mappings,
-      byIp: Object.keys(byIp).map(ip => ({
-        ip,
-        tokens: byIp[ip],
-        tokenCount: byIp[ip].length,
-      })),
-      totalMappings: mappings.length,
-    };
+    return { tokenMappings: mappings, format: 'token ip' };
   }
 
-  /**
-   * Parse emea_token file (single line: token=IP, token=IP, ...)
-   */
   private parseEmeaToken(content: string): any {
-    const line = content.trim();
-    const mappings: Array<{ token: string; ip: string }> = [];
+    const lines = content.split('\n').filter(line => line.trim());
+    const tokens: string[] = [];
     
-    // Split by comma and parse each token=IP pair
-    const pairs = line.split(',').map(p => p.trim()).filter(p => p);
-    
-    pairs.forEach(pair => {
-      const match = pair.match(/^(\d+)=([^,]+)$/);
-      if (match) {
-        mappings.push({
-          token: match[1],
-          ip: match[2].trim(),
-        });
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed) {
+        tokens.push(trimmed);
       }
-    });
+    }
     
-    // Group by IP
-    const byIp: Record<string, string[]> = {};
-    mappings.forEach(m => {
-      if (!byIp[m.ip]) {
-        byIp[m.ip] = [];
-      }
-      byIp[m.ip].push(m.token);
-    });
-    
-    return {
-      format: 'token_to_ip',
-      mappings,
-      byIp: Object.keys(byIp).map(ip => ({
-        ip,
-        tokens: byIp[ip],
-        tokenCount: byIp[ip].length,
-      })),
-      totalMappings: mappings.length,
-    };
+    return { tokens, format: 'one-per-line' };
   }
 
-  /**
-   * Parse all-tokens file (token|IP, one per line)
-   */
   private parseAllTokens(content: string): any {
-    const lines = content.trim().split('\n').filter(line => line.trim());
-    const mappings: Array<{ token: string; ip: string }> = [];
+    const lines = content.split('\n').filter(line => line.trim());
+    const tokens: string[] = [];
     
-    lines.forEach(line => {
-      const parts = line.split('|');
-      if (parts.length === 2) {
-        mappings.push({
-          token: parts[0].trim(),
-          ip: parts[1].trim(),
-        });
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed) {
+        tokens.push(trimmed);
       }
-    });
+    }
     
-    // Group by IP
-    const byIp: Record<string, string[]> = {};
-    mappings.forEach(m => {
-      if (!byIp[m.ip]) {
-        byIp[m.ip] = [];
-      }
-      byIp[m.ip].push(m.token);
-    });
-    
-    return {
-      format: 'token_to_ip',
-      mappings,
-      byIp: Object.keys(byIp).map(ip => ({
-        ip,
-        tokens: byIp[ip],
-        tokenCount: byIp[ip].length,
-      })),
-      totalMappings: mappings.length,
-    };
+    return { tokens, format: 'one-per-line' };
   }
 
-  /**
-   * Parse token list file (comma-separated tokens)
-   */
-  private parseTokenList(content: string, filename: string): any {
-    const line = content.trim();
-    const tokens = line.split(',').map(t => t.trim()).filter(t => t);
+  private parseIpTokens(filename: string, content: string): any {
+    const lines = content.split('\n').filter(line => line.trim());
+    const tokens: string[] = [];
     
-    return {
-      format: 'token_list',
-      source: filename,
-      tokens,
-      tokenCount: tokens.length,
-    };
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed) {
+        tokens.push(trimmed);
+      }
+    }
+    
+    // Extract IP from filename if possible
+    const ipMatch = filename.match(/^(\d+\.\d+\.\d+\.\d+)/);
+    const ip = ipMatch ? ipMatch[1] : '';
+    
+    return { ip, tokens, format: 'one-per-line' };
   }
 
-  /**
-   * Parse a single file based on its type
-   */
-  private parseFile(filename: string, content: string): ParsedFile {
+  private parseTokenList(content: string): any {
+    const lines = content.split('\n').filter(line => line.trim());
+    const tokens: string[] = [];
+    
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed) {
+        tokens.push(trimmed);
+      }
+    }
+    
+    return { tokens, format: 'one-per-line' };
+  }
+
+  private async parseFile(filename: string, content: string): Promise<ParsedFile> {
     const fileType = this.detectFileType(filename);
-    let data: any;
+    let data: any = {};
     let metadata: any = {};
 
-    switch (fileType) {
-      case 'hostname':
-        data = this.parseHostname(content);
-        metadata.lineCount = content.trim().split('\n').filter(l => l.trim()).length;
-        break;
-      
-      case 'dc':
-      case 'emea_dc':
-        data = this.parseDatacenter(content);
-        metadata.lineCount = content.trim().split('\n').filter(l => l.trim()).length;
-        break;
-      
-      case 'tokenmap':
-        data = this.parseTokenmap(content);
-        metadata.lineCount = content.trim().split('\n').filter(l => l.trim()).length;
-        metadata.tokenCount = data.totalMappings;
-        metadata.ipCount = data.byIp.length;
-        break;
-      
-      case 'emea_token':
-        data = this.parseEmeaToken(content);
-        metadata.tokenCount = data.totalMappings;
-        metadata.ipCount = data.byIp.length;
-        break;
-      
-      case 'all_tokens':
-        data = this.parseAllTokens(content);
-        metadata.lineCount = content.trim().split('\n').filter(l => l.trim()).length;
-        metadata.tokenCount = data.totalMappings;
-        metadata.ipCount = data.byIp.length;
-        break;
-      
-      case 'ip_tokens':
-      case 'token_list':
-        data = this.parseTokenList(content, filename);
-        metadata.tokenCount = data.tokenCount;
-        break;
-      
-      default:
-        // Fallback: try to parse as token list
-        data = this.parseTokenList(content, filename);
-        metadata.tokenCount = data.tokenCount;
+    try {
+      if (fileType === 'json') {
+        try {
+          data = JSON.parse(content);
+          metadata = { format: 'json' };
+        } catch (e) {
+          data = { raw: content };
+          metadata = { format: 'json', parseError: 'Invalid JSON' };
+        }
+      } else if (fileType === 'hostname') {
+        const parsed = this.parseHostname(content);
+        data = parsed;
+        metadata = { format: parsed.format, lineCount: content.split('\n').length };
+      } else if (fileType === 'dc') {
+        const parsed = this.parseDatacenter(content);
+        data = parsed;
+        metadata = { format: parsed.format, lineCount: content.split('\n').length };
+      } else if (fileType === 'tokenmap') {
+        const parsed = this.parseTokenmap(content);
+        data = parsed;
+        metadata = { format: parsed.format, tokenCount: parsed.tokenMappings.length };
+      } else if (fileType === 'emea_token') {
+        const parsed = this.parseEmeaToken(content);
+        data = parsed;
+        metadata = { format: parsed.format, tokenCount: parsed.tokens.length };
+      } else if (fileType === 'all_tokens') {
+        const parsed = this.parseAllTokens(content);
+        data = parsed;
+        metadata = { format: parsed.format, tokenCount: parsed.tokens.length };
+      } else if (fileType === 'ip_tokens') {
+        const parsed = this.parseIpTokens(filename, content);
+        data = parsed;
+        metadata = { format: parsed.format, tokenCount: parsed.tokens.length, ipCount: parsed.ip ? 1 : 0 };
+      } else if (fileType === 'token_list') {
+        const parsed = this.parseTokenList(content);
+        data = parsed;
+        metadata = { format: parsed.format, tokenCount: parsed.tokens.length };
+      } else {
+        data = { raw: content };
+        metadata = { format: 'unknown' };
+      }
+    } catch (error: any) {
+      data = { raw: content };
+      metadata = { parseError: error.message };
     }
 
     return {
@@ -304,226 +195,142 @@ export class OutputParser {
     };
   }
 
-  /**
-   * Build unified data model from all parsed files
-   */
-  private buildUnifiedModel(parsedFiles: ParsedFile[], jsonData: ParsedFile[]): any {
-    const model: any = {
-      nodes: [],
-      datacenters: {},
-      hostnames: {},
-      tokenMappings: [],
+  private buildUnifiedModel(parsedFiles: ParsedFile[]): SimulationOutput['data'] {
+    const nodes: SimulationOutput['data']['nodes'] = [];
+    const datacenters: Record<string, string[]> = {};
+    const hostnames: Record<string, string> = {};
+    const tokenMappings: Array<{ token: string; ip: string }> = [];
+    const ipToTokens: Record<string, string[]> = {};
+
+    // Process hostname files
+    for (const file of parsedFiles) {
+      if (file.type === 'hostname' && file.data.hostnames) {
+        Object.assign(hostnames, file.data.hostnames);
+      }
+    }
+
+    // Process datacenter files
+    for (const file of parsedFiles) {
+      if (file.type === 'dc' && file.data.datacenters) {
+        Object.assign(datacenters, file.data.datacenters);
+      }
+    }
+
+    // Process tokenmap files
+    for (const file of parsedFiles) {
+      if (file.type === 'tokenmap' && file.data.tokenMappings) {
+        tokenMappings.push(...file.data.tokenMappings);
+      }
+    }
+
+    // Process IP token files
+    for (const file of parsedFiles) {
+      if (file.type === 'ip_tokens' && file.data.ip && file.data.tokens) {
+        ipToTokens[file.data.ip] = file.data.tokens;
+      }
+    }
+
+    // Build nodes from token mappings and IP tokens
+    const ipSet = new Set<string>();
+    tokenMappings.forEach(m => ipSet.add(m.ip));
+    Object.keys(ipToTokens).forEach(ip => ipSet.add(ip));
+
+    for (const ip of ipSet) {
+      const hostname = hostnames[ip] || ip;
+      const [name, rack] = hostname.split(':');
+      const tokens = ipToTokens[ip] || tokenMappings.filter(m => m.ip === ip).map(m => m.token);
+
+      // Find datacenter for this IP
+      let datacenter = '';
+      for (const [dc, ips] of Object.entries(datacenters)) {
+        if (ips.includes(ip)) {
+          datacenter = dc;
+          break;
+        }
+      }
+
+      nodes.push({
+        ip,
+        name: name || ip,
+        hostname: hostname || ip,
+        datacenter: datacenter || 'unknown',
+        rack: rack || '',
+        tokens,
+        tokenCount: tokens.length,
+      });
+    }
+
+    return {
+      nodes,
+      datacenters,
+      hostnames,
+      tokenMappings,
       summary: {
-        totalNodes: 0,
-        totalTokens: 0,
-        totalDatacenters: 0,
+        totalNodes: nodes.length,
+        totalTokens: nodes.reduce((sum, node) => sum + node.tokenCount, 0),
+        totalDatacenters: Object.keys(datacenters).length,
       },
     };
-
-    // Extract hostname mappings
-    const hostnameFiles = parsedFiles.filter(f => f.type === 'hostname');
-    hostnameFiles.forEach(file => {
-      if (file.data.mappings) {
-        Object.assign(model.hostnames, file.data.mappings);
-      }
-    });
-
-    // Extract datacenter mappings
-    const dcFiles = parsedFiles.filter(f => f.type === 'dc' || f.type === 'emea_dc');
-    dcFiles.forEach(file => {
-      if (file.data.datacenters) {
-        Object.assign(model.datacenters, file.data.datacenters);
-      }
-    });
-
-    // Extract token mappings
-    const tokenFiles = parsedFiles.filter(f => 
-      f.type === 'tokenmap' || f.type === 'emea_token' || f.type === 'all_tokens'
-    );
-    tokenFiles.forEach(file => {
-      if (file.data.mappings) {
-        model.tokenMappings.push(...file.data.mappings);
-      }
-    });
-
-    // Build nodes from IP token files and hostname mappings
-    const ipTokenFiles = parsedFiles.filter(f => f.type === 'ip_tokens');
-    ipTokenFiles.forEach(file => {
-      const ip = this.extractIPFromFilename(file.filename);
-      if (ip && file.data.tokens) {
-        const hostnameInfo = model.hostnames[ip] || '';
-        const [hostname, rack] = hostnameInfo.split(':');
-        
-        // Find datacenter for this IP
-        let datacenter = null;
-        for (const [dc, ips] of Object.entries(model.datacenters)) {
-          if (Array.isArray(ips) && ips.includes(ip)) {
-            datacenter = dc;
-            break;
-          }
-        }
-
-        // Extract region from filename if available
-        let region = 'emea'; // default
-        if (file.filename.toLowerCase().includes('emea')) {
-          region = 'emea';
-        }
-
-        model.nodes.push({
-          ip,
-          name: hostname || ip,
-          hostname: hostname || null,
-          datacenter: datacenter,
-          region: region,
-          rack: rack || 'rack',
-          tokens: file.data.tokens,
-          tokenCount: file.data.tokens.length,
-        });
-      }
-    });
-
-    // If JSON files exist, merge their node data
-    jsonData.forEach(file => {
-      if (file.type === 'json' && file.data.nodes) {
-        // Merge with existing nodes or use JSON structure
-        if (Array.isArray(file.data.nodes)) {
-          model.nodes = file.data.nodes;
-        }
-      }
-    });
-
-    // Calculate summary
-    model.summary.totalNodes = model.nodes.length;
-    model.summary.totalTokens = model.nodes.reduce((sum: number, node: any) => 
-      sum + (node.tokens?.length || 0), 0);
-    model.summary.totalDatacenters = Object.keys(model.datacenters).length;
-
-    return model;
   }
 
-  /**
-   * Extract IP address from filename
-   */
-  private extractIPFromFilename(filename: string): string | null {
-    // Match IP pattern: 192.168.202.212 or 192.168.202.212.txt
-    const match = filename.match(/^(\d+\.\d+\.\d+\.\d+)/);
-    return match ? match[1] : null;
-  }
-
-  /**
-   * Parse all .txt files from output directory into JSON
-   */
-  async parseOutput(customerName: string, projectId: string): Promise<SimulationOutput> {
+  async parseOutput(
+    customerName: string,
+    projectId: string
+  ): Promise<SimulationOutput> {
     const outputPath = this.fileManager.getOutputPath(customerName, projectId);
-
-    // Check if output directory exists
+    
     if (!(await this.fileManager.fileExists(outputPath))) {
-      throw new AppError(
-        `Output directory does not exist for project '${projectId}'`,
-        404
-      );
-    }
-
-    try {
-      // List all .txt files in output directory
-      const allFiles = await this.fileManager.listFiles(outputPath);
-      const txtFiles = allFiles.filter((file) => file.endsWith('.txt'));
-
-      if (txtFiles.length === 0) {
-        throw new AppError(
-          `No output files found for project '${projectId}'. Run simulation first.`,
-          404
-        );
-      }
-
-      // Also check for .json files
-      const jsonFiles = allFiles.filter((file) => file.endsWith('.json'));
-
-      // Parse all files
-      const parsedFiles = await Promise.all(
-        txtFiles.map(async (filePath) => {
-          const content = await this.fileManager.readFile(filePath);
-          const filename = path.basename(filePath);
-          return this.parseFile(filename, content);
-        })
-      );
-
-      // Load JSON files if they exist
-      const jsonData = await Promise.all(
-        jsonFiles.map(async (filePath) => {
-          const content = await this.fileManager.readFile(filePath);
-          const filename = path.basename(filePath);
-          try {
-            return {
-              filename,
-              type: 'json',
-              data: JSON.parse(content),
-              metadata: {
-                format: 'json',
-              },
-            };
-          } catch (error) {
-            return {
-              filename,
-              type: 'json',
-              data: { raw: content },
-              metadata: {
-                format: 'json',
-                parseError: 'Invalid JSON',
-              },
-            };
-          }
-        })
-      );
-
-      // Organize files by type
-      const organized: Record<string, ParsedFile[]> = {};
-      [...parsedFiles, ...jsonData].forEach(file => {
-        if (!organized[file.type]) {
-          organized[file.type] = [];
-        }
-        organized[file.type].push(file);
-      });
-
-      // Build unified data model
-      const unifiedModel = this.buildUnifiedModel(parsedFiles, jsonData);
-
       return {
         parsed: {
-          files: [...parsedFiles, ...jsonData],
-          organized,
+          files: [],
           summary: {
-            totalFiles: parsedFiles.length + jsonData.length,
-            txtFiles: parsedFiles.length,
-            jsonFiles: jsonFiles.length,
-            fileTypes: Object.keys(organized),
+            totalFiles: 0,
+            txtFiles: 0,
+            jsonFiles: 0,
+            fileTypes: [],
           },
         },
-        data: unifiedModel,
+        data: {
+          nodes: [],
+          datacenters: {},
+          hostnames: {},
+          tokenMappings: [],
+          summary: {
+            totalNodes: 0,
+            totalTokens: 0,
+            totalDatacenters: 0,
+          },
+        },
       };
-    } catch (error) {
-      if (error instanceof AppError) {
-        throw error;
-      }
-      throw new AppError(`Failed to parse output: ${error}`, 500);
-    }
-  }
-
-  /**
-   * Get a specific output file by name
-   */
-  async getOutputFile(
-    customerName: string,
-    projectId: string,
-    filename: string
-  ): Promise<string> {
-    const outputPath = this.fileManager.getOutputPath(customerName, projectId);
-    const filePath = path.join(outputPath, filename);
-
-    if (!(await this.fileManager.fileExists(filePath))) {
-      throw new AppError(`Output file '${filename}' not found`, 404);
     }
 
-    return await this.fileManager.readFile(filePath);
+    const files = await this.fileManager.listFiles(outputPath);
+    const parsedFiles: ParsedFile[] = [];
+
+    for (const filename of files) {
+      const filePath = path.join(outputPath, filename);
+      const content = await this.fileManager.readFile(filePath);
+      const parsed = await this.parseFile(filename, content);
+      parsedFiles.push(parsed);
+    }
+
+    const fileTypes = [...new Set(parsedFiles.map(f => f.type))];
+    const txtFiles = parsedFiles.filter(f => f.filename.endsWith('.txt')).length;
+    const jsonFiles = parsedFiles.filter(f => f.filename.endsWith('.json')).length;
+
+    const unifiedData = this.buildUnifiedModel(parsedFiles);
+
+    return {
+      parsed: {
+        files: parsedFiles,
+        summary: {
+          totalFiles: files.length,
+          txtFiles,
+          jsonFiles,
+          fileTypes,
+        },
+      },
+      data: unifiedData,
+    };
   }
 }

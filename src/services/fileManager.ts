@@ -3,7 +3,6 @@
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import { config } from '../utils/config';
-import { AppError } from '../utils/errors';
 
 export class FileManager {
   private basePath: string;
@@ -12,164 +11,72 @@ export class FileManager {
     this.basePath = config.volumePath;
   }
 
-  /**
-   * Get customer directory path
-   */
+  // Customer path methods
   getCustomerPath(customerName: string): string {
     return path.join(this.basePath, 'customers', customerName);
   }
 
-  /**
-   * Get project directory path
-   */
-  getProjectPath(customerName: string, projectId: string): string {
-    return path.join(this.getCustomerPath(customerName), 'projects', projectId);
-  }
-
-  /**
-   * Get config file path
-   */
-  getConfigPath(customerName: string, projectId: string): string {
-    return path.join(this.getProjectPath(customerName, projectId), 'config.yaml');
-  }
-
-  /**
-   * Get status file path
-   */
-  getStatusPath(customerName: string, projectId: string): string {
-    return path.join(this.getProjectPath(customerName, projectId), 'hsstool_status.txt');
-  }
-
-  /**
-   * Get ring file path
-   */
-  getRingPath(customerName: string, projectId: string): string {
-    return path.join(this.getProjectPath(customerName, projectId), 'hsstool_ring.txt');
-  }
-
-  /**
-   * Get output directory path
-   */
-  getOutputPath(customerName: string, projectId: string): string {
-    return path.join(this.getProjectPath(customerName, projectId), 'output');
-  }
-
-  /**
-   * Check if customer folder exists
-   */
   async customerExists(customerName: string): Promise<boolean> {
     const customerPath = this.getCustomerPath(customerName);
     return await fs.pathExists(customerPath);
   }
 
-  /**
-   * Create customer folder
-   */
   async createCustomer(customerName: string): Promise<void> {
     const customerPath = this.getCustomerPath(customerName);
-    
-    if (await this.customerExists(customerName)) {
-      throw new AppError(`Customer '${customerName}' already exists`, 409);
-    }
-
-    try {
-      await fs.ensureDir(customerPath);
-      await fs.ensureDir(path.join(customerPath, 'projects'));
-    } catch (error) {
-      throw new AppError(`Failed to create customer folder: ${error}`, 500);
-    }
+    await fs.ensureDir(customerPath);
   }
 
-  /**
-   * Delete customer folder
-   */
   async deleteCustomer(customerName: string): Promise<void> {
     const customerPath = this.getCustomerPath(customerName);
-    
-    if (!(await this.customerExists(customerName))) {
-      throw new AppError(`Customer '${customerName}' does not exist`, 404);
-    }
-
-    try {
-      await fs.remove(customerPath);
-    } catch (error) {
-      throw new AppError(`Failed to delete customer folder: ${error}`, 500);
-    }
+    await fs.remove(customerPath);
   }
 
-  /**
-   * Rename customer folder
-   */
-  async renameCustomer(oldCustomerName: string, newCustomerName: string): Promise<void> {
-    const oldPath = this.getCustomerPath(oldCustomerName);
-    const newPath = this.getCustomerPath(newCustomerName);
-
-    if (!(await this.customerExists(oldCustomerName))) {
-      throw new AppError(`Customer '${oldCustomerName}' does not exist`, 404);
-    }
-
-    if (await this.customerExists(newCustomerName)) {
-      throw new AppError(`Customer '${newCustomerName}' already exists`, 409);
-    }
-
-    try {
-      await fs.move(oldPath, newPath);
-    } catch (error) {
-      throw new AppError(`Failed to rename customer: ${error}`, 500);
-    }
+  async renameCustomer(oldName: string, newName: string): Promise<void> {
+    const oldPath = this.getCustomerPath(oldName);
+    const newPath = this.getCustomerPath(newName);
+    await fs.move(oldPath, newPath);
   }
 
-  /**
-   * Check if project folder exists
-   */
+  async listCustomers(): Promise<string[]> {
+    const customersDir = path.join(this.basePath, 'customers');
+    if (!(await fs.pathExists(customersDir))) {
+      return [];
+    }
+    const entries = await fs.readdir(customersDir);
+    const customers: string[] = [];
+    for (const entry of entries) {
+      const fullPath = path.join(customersDir, entry);
+      const stat = await fs.stat(fullPath);
+      if (stat.isDirectory()) {
+        customers.push(entry);
+      }
+    }
+    return customers.sort();
+  }
+
+  // Project path methods
+  getProjectPath(customerName: string, projectId: string): string {
+    return path.join(this.basePath, 'customers', customerName, 'projects', projectId);
+  }
+
   async projectExists(customerName: string, projectId: string): Promise<boolean> {
     const projectPath = this.getProjectPath(customerName, projectId);
     return await fs.pathExists(projectPath);
   }
 
-  /**
-   * Create project folder
-   */
   async createProject(customerName: string, projectId: string): Promise<void> {
-    if (!(await this.customerExists(customerName))) {
-      throw new AppError(`Customer '${customerName}' does not exist`, 404);
-    }
-
-    if (await this.projectExists(customerName, projectId)) {
-      throw new AppError(`Project '${projectId}' already exists for customer '${customerName}'`, 409);
-    }
-
     const projectPath = this.getProjectPath(customerName, projectId);
-    const outputPath = this.getOutputPath(customerName, projectId);
-
-    try {
-      await fs.ensureDir(projectPath);
-      await fs.ensureDir(outputPath);
-    } catch (error) {
-      throw new AppError(`Failed to create project folder: ${error}`, 500);
-    }
+    await fs.ensureDir(projectPath);
+    // Create output directory
+    const outputPath = path.join(projectPath, 'output');
+    await fs.ensureDir(outputPath);
   }
 
-  /**
-   * Delete project folder
-   */
   async deleteProject(customerName: string, projectId: string): Promise<void> {
-    if (!(await this.projectExists(customerName, projectId))) {
-      throw new AppError(`Project '${projectId}' does not exist for customer '${customerName}'`, 404);
-    }
-
     const projectPath = this.getProjectPath(customerName, projectId);
-
-    try {
-      await fs.remove(projectPath);
-    } catch (error) {
-      throw new AppError(`Failed to delete project folder: ${error}`, 500);
-    }
+    await fs.remove(projectPath);
   }
 
-  /**
-   * Rename project folder
-   */
   async renameProject(
     customerName: string,
     oldProjectId: string,
@@ -177,137 +84,75 @@ export class FileManager {
   ): Promise<void> {
     const oldPath = this.getProjectPath(customerName, oldProjectId);
     const newPath = this.getProjectPath(customerName, newProjectId);
-
-    if (!(await this.projectExists(customerName, oldProjectId))) {
-      throw new AppError(`Project '${oldProjectId}' does not exist`, 404);
-    }
-
-    if (await this.projectExists(customerName, newProjectId)) {
-      throw new AppError(`Project '${newProjectId}' already exists`, 409);
-    }
-
-    try {
-      await fs.move(oldPath, newPath);
-    } catch (error) {
-      throw new AppError(`Failed to rename project: ${error}`, 500);
-    }
+    await fs.move(oldPath, newPath);
   }
 
-  /**
-   * Write file content
-   */
-  async writeFile(filePath: string, content: string): Promise<void> {
-    try {
-      await fs.ensureDir(path.dirname(filePath));
-      await fs.writeFile(filePath, content, 'utf8');
-    } catch (error) {
-      throw new AppError(`Failed to write file: ${error}`, 500);
+  async listProjects(customerName: string): Promise<string[]> {
+    const projectsDir = path.join(
+      this.basePath,
+      'customers',
+      customerName,
+      'projects'
+    );
+    if (!(await fs.pathExists(projectsDir))) {
+      return [];
     }
-  }
-
-  /**
-   * Read file content
-   */
-  async readFile(filePath: string): Promise<string> {
-    try {
-      return await fs.readFile(filePath, 'utf8');
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        throw new AppError(`File not found: ${filePath}`, 404);
+    const entries = await fs.readdir(projectsDir);
+    const projects: string[] = [];
+    for (const entry of entries) {
+      const fullPath = path.join(projectsDir, entry);
+      const stat = await fs.stat(fullPath);
+      if (stat.isDirectory()) {
+        projects.push(entry);
       }
-      throw new AppError(`Failed to read file: ${error}`, 500);
     }
+    return projects.sort();
   }
 
-  /**
-   * Check if file exists
-   */
+  // File path methods
+  getConfigPath(customerName: string, projectId: string): string {
+    return path.join(this.getProjectPath(customerName, projectId), 'config.yaml');
+  }
+
+  getStatusPath(customerName: string, projectId: string): string {
+    return path.join(this.getProjectPath(customerName, projectId), 'hsstool_status.txt');
+  }
+
+  getRingPath(customerName: string, projectId: string): string {
+    return path.join(this.getProjectPath(customerName, projectId), 'hsstool_ring.txt');
+  }
+
+  getOutputPath(customerName: string, projectId: string): string {
+    return path.join(this.getProjectPath(customerName, projectId), 'output');
+  }
+
+  // File operations
   async fileExists(filePath: string): Promise<boolean> {
     return await fs.pathExists(filePath);
   }
 
-  /**
-   * List all files in directory
-   */
+  async readFile(filePath: string): Promise<string> {
+    return await fs.readFile(filePath, 'utf-8');
+  }
+
+  async writeFile(filePath: string, content: string): Promise<void> {
+    await fs.ensureDir(path.dirname(filePath));
+    await fs.writeFile(filePath, content, 'utf-8');
+  }
+
   async listFiles(dirPath: string): Promise<string[]> {
-    try {
-      if (!(await fs.pathExists(dirPath))) {
-        return [];
-      }
-      const items = await fs.readdir(dirPath);
-      const files: string[] = [];
-      
-      for (const item of items) {
-        const itemPath = path.join(dirPath, item);
-        const stats = await fs.stat(itemPath);
-        if (stats.isFile()) {
-          files.push(itemPath);
-        }
-      }
-      
-      return files;
-    } catch (error) {
-      throw new AppError(`Failed to list files: ${error}`, 500);
+    if (!(await fs.pathExists(dirPath))) {
+      return [];
     }
-  }
-
-  /**
-   * List all customers
-   */
-  async listCustomers(): Promise<string[]> {
-    try {
-      const customersPath = path.join(this.basePath, 'customers');
-      if (!(await fs.pathExists(customersPath))) {
-        return [];
+    const entries = await fs.readdir(dirPath);
+    const files: string[] = [];
+    for (const entry of entries) {
+      const fullPath = path.join(dirPath, entry);
+      const stat = await fs.stat(fullPath);
+      if (stat.isFile()) {
+        files.push(entry);
       }
-      const items = await fs.readdir(customersPath);
-      const customers: string[] = [];
-      
-      for (const item of items) {
-        const itemPath = path.join(customersPath, item);
-        const stats = await fs.stat(itemPath);
-        if (stats.isDirectory()) {
-          customers.push(item);
-        }
-      }
-      
-      return customers.sort();
-    } catch (error) {
-      throw new AppError(`Failed to list customers: ${error}`, 500);
     }
-  }
-
-  /**
-   * List all projects for a customer
-   */
-  async listProjects(customerName: string): Promise<string[]> {
-    try {
-      if (!(await this.customerExists(customerName))) {
-        throw new AppError(`Customer '${customerName}' does not exist`, 404);
-      }
-      
-      const projectsPath = path.join(this.getCustomerPath(customerName), 'projects');
-      if (!(await fs.pathExists(projectsPath))) {
-        return [];
-      }
-      const items = await fs.readdir(projectsPath);
-      const projects: string[] = [];
-      
-      for (const item of items) {
-        const itemPath = path.join(projectsPath, item);
-        const stats = await fs.stat(itemPath);
-        if (stats.isDirectory()) {
-          projects.push(item);
-        }
-      }
-      
-      return projects.sort();
-    } catch (error) {
-      if (error instanceof AppError) {
-        throw error;
-      }
-      throw new AppError(`Failed to list projects: ${error}`, 500);
-    }
+    return files.sort();
   }
 }
-
