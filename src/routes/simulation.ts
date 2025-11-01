@@ -8,7 +8,7 @@ import { OutputParser } from '../services/outputParser';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { handleAsync, sendError, AppError } from '../utils/errors';
 
-const router = Router();
+const router = Router({ mergeParams: true });
 const fileManager = new FileManager();
 const dockerService = new DockerService();
 const outputParser = new OutputParser();

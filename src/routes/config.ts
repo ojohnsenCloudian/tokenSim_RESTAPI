@@ -8,7 +8,7 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { handleAsync, sendError, AppError } from '../utils/errors';
 import { CreateConfigRequest, ConfigYaml } from '../types';
 
-const router = Router();
+const router = Router({ mergeParams: true });
 const fileManager = new FileManager();
 
 // Validation middleware

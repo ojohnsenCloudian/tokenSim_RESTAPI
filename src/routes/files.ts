@@ -6,7 +6,7 @@ import { FileManager } from '../services/fileManager';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { handleAsync, sendError, AppError } from '../utils/errors';
 
-const router = Router();
+const router = Router({ mergeParams: true });
 const fileManager = new FileManager();
 
 // Validation middleware
