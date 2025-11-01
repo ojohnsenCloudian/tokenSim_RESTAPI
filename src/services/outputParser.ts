@@ -273,6 +273,224 @@ export class OutputParser {
     };
   }
 
+  /**
+   * Parse terminal output from simulation execution
+   */
+  parseTerminalOutput(stdout: string, stderr?: string): {
+    success: boolean;
+    output: {
+      raw: string;
+      structured: {
+        cumulativeMode?: boolean;
+        dataCenters?: Array<{
+          name: string;
+          storagePolicy: string;
+          policyDescription?: string;
+          hosts: Array<{
+            host: string;
+            isNew?: boolean;
+            hostDataOwnershipRawTB: number;
+            numberOfTokens: number;
+            averageDataOwnershipPerVNodeRawTB: number;
+            deviationPercent?: number;
+          }>;
+          summary: {
+            highestAverage: {
+              value: number;
+              host: string;
+            };
+            lowestAverage: {
+              value: number;
+              host: string;
+            };
+            dataCenterAverage: number;
+            hostsDeviating: number;
+            deviatingHosts: string[];
+            maxDeviationDegree: number;
+            hasImbalance: boolean;
+            imbalanceMessage?: string;
+          };
+        }>;
+        errors?: string[];
+        warnings?: string[];
+      };
+      errors?: string[];
+      warnings?: string[];
+    };
+  } {
+    const output: any = {
+      raw: stdout,
+      structured: {
+        dataCenters: [],
+      },
+      errors: [],
+      warnings: [],
+    };
+
+    // Extract cumulative mode
+    const cumulativeMatch = stdout.match(/Cumulative mode:\s*(true|false)/i);
+    if (cumulativeMatch) {
+      output.structured.cumulativeMode = cumulativeMatch[1].toLowerCase() === 'true';
+    }
+
+    // Extract errors from stderr
+    if (stderr) {
+      const errorLines = stderr.split('\n').filter(line => 
+        line.trim() && 
+        (line.toLowerCase().includes('error') || 
+         line.toLowerCase().includes('failed') ||
+         line.toLowerCase().includes('exception'))
+      );
+      output.errors = errorLines;
+      output.structured.errors = errorLines;
+    }
+
+    // Extract errors from stdout (like ERROR StatusLogger)
+    const stdoutErrors = stdout.split('\n').filter(line =>
+      line.trim() &&
+      line.match(/^ERROR\s+/i)
+    );
+    if (stdoutErrors.length > 0) {
+      output.structured.errors = (output.structured.errors || []).concat(stdoutErrors);
+    }
+
+    // Extract warnings from stdout
+    const warningLines = stdout.split('\n').filter(line =>
+      line.trim() &&
+      line.toLowerCase().includes('warning') &&
+      !line.toLowerCase().includes('no warnings')
+    );
+    if (warningLines.length > 0) {
+      output.warnings = warningLines;
+      output.structured.warnings = warningLines;
+    }
+
+    // Parse data center sections
+    const sections = stdout.split(/\n(?=Cumulative mode:|Data Center:)/i);
+    
+    sections.forEach(section => {
+      // Extract data center name
+      const dcMatch = section.match(/Data Center:\s*([^\n]+)/i);
+      if (!dcMatch) return;
+
+      const dcName = dcMatch[1].trim();
+      const dcData: any = {
+        name: dcName,
+        hosts: [],
+        summary: {},
+      };
+
+      // Extract storage policy
+      const policyMatch = section.match(/Storage Policy:\s*([^\n]+)/i);
+      if (policyMatch) {
+        dcData.storagePolicy = policyMatch[1].trim();
+      }
+
+      // Extract policy description
+      const policyDescMatch = section.match(/With\s+([^\n]+?)\s+storage policy,([^\n]+)/i);
+      if (policyDescMatch) {
+        dcData.policyDescription = (policyDescMatch[1] + ',' + policyDescMatch[2]).trim();
+      }
+
+      // Parse host table
+      // Look for table lines with IP addresses or hostnames
+      const lines = section.split('\n');
+      let inTable = false;
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        
+        // Detect table start (line with "Host" header)
+        if (line.includes('Host') && line.includes('Host Data Ownership') && line.includes('Number of Tokens')) {
+          inTable = true;
+          continue;
+        }
+
+        // Parse table rows (lines with IP addresses or hostnames followed by numbers)
+        // Match: *hostname or IP, then numbers (ownership, tokens, average, deviation)
+        const hostRowMatch = line.match(/^(\*?)([\d.]+(?:_[^\s]+)?|[a-zA-Z0-9._-]+)\s+(\d+\.\d+)\s+(\d+)\s+(\d+\.\d+)\s*(?:\(([+-]\d+\.\d+)%\))?/);
+        if (inTable && hostRowMatch) {
+          const isNew = hostRowMatch[1] === '*';
+          const host = hostRowMatch[2];
+          const ownership = parseFloat(hostRowMatch[3]);
+          const tokens = parseInt(hostRowMatch[4], 10);
+          const average = parseFloat(hostRowMatch[5]);
+          const deviation = hostRowMatch[6] ? parseFloat(hostRowMatch[6]) : undefined;
+
+          const hostData: any = {
+            host,
+            isNew,
+            hostDataOwnershipRawTB: ownership,
+            numberOfTokens: tokens,
+            averageDataOwnershipPerVNodeRawTB: average,
+          };
+
+          if (deviation !== undefined) {
+            hostData.deviationPercent = deviation;
+          }
+
+          dcData.hosts.push(hostData);
+        }
+
+        // Detect table end (empty line or summary line)
+        if (inTable && (line === '' || line.includes('Highest average') || line.includes('Lowest average'))) {
+          inTable = false;
+        }
+      }
+
+      // Extract summary information
+      const highestMatch = section.match(/Highest average data ownership per vNode on a host:\s*([\d.]+)\s+TB\s+\(([^)]+)\)/i);
+      if (highestMatch) {
+        dcData.summary.highestAverage = {
+          value: parseFloat(highestMatch[1]),
+          host: highestMatch[2].trim(),
+        };
+      }
+
+      const lowestMatch = section.match(/Lowest average data ownership per vNode on a host:\s*([\d.]+)\s+TB\s+\(([^)]+)\)/i);
+      if (lowestMatch) {
+        dcData.summary.lowestAverage = {
+          value: parseFloat(lowestMatch[1]),
+          host: lowestMatch[2].trim(),
+        };
+      }
+
+      const avgMatch = section.match(/Data center average data ownership per vNode:\s*([\d.]+)\s+TB/i);
+      if (avgMatch) {
+        dcData.summary.dataCenterAverage = parseFloat(avgMatch[1]);
+      }
+
+      const deviatingMatch = section.match(/Number of hosts deviating from data center average by more than\s+([\d.]+)%:\s*(\d+)\s*\(([^)]+)\)/i);
+      if (deviatingMatch) {
+        dcData.summary.hostsDeviating = parseInt(deviatingMatch[2], 10);
+        const hostsList = deviatingMatch[3].split(',').map(h => h.trim());
+        dcData.summary.deviatingHosts = hostsList;
+      }
+
+      const maxDevMatch = section.match(/Max deviation degree:\s*([\d.]+)%/i);
+      if (maxDevMatch) {
+        dcData.summary.maxDeviationDegree = parseFloat(maxDevMatch[1]);
+      }
+
+      const imbalanceMatch = section.match(/the simulation projects a data imbalance of greater than\s+([\d.]+)%/i);
+      if (imbalanceMatch) {
+        dcData.summary.hasImbalance = true;
+        dcData.summary.imbalanceMessage = `Data imbalance of greater than ${imbalanceMatch[1]}%`;
+      } else {
+        dcData.summary.hasImbalance = false;
+      }
+
+      if (dcData.hosts.length > 0) {
+        output.structured.dataCenters.push(dcData);
+      }
+    });
+
+    return {
+      success: !stderr || stderr.trim().length === 0,
+      output,
+    };
+  }
+
   async parseOutput(
     customerName: string,
     projectId: string

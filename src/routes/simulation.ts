@@ -94,17 +94,57 @@ router.post(
     // Execute simulation
     const { stdout, stderr } = await dockerService.runSimulation(configPathInContainer);
 
+    // Parse terminal output into structured JSON
+    const parsedTerminal = outputParser.parseTerminalOutput(stdout, stderr);
+
+    // Also parse output files if they exist
+    let parsedFiles = null;
+    try {
+      parsedFiles = await outputParser.parseOutput(customerName, projectId);
+    } catch (error) {
+      // Output files might not exist yet, that's OK
+    }
+
     res.json({
-      success: true,
-      message: `Simulation executed successfully for project '${projectId}'`,
+      success: parsedTerminal.success,
+      message: parsedTerminal.success 
+        ? `Simulation executed successfully for project '${projectId}'`
+        : `Simulation completed with errors for project '${projectId}'`,
       data: {
         customerName,
         projectId,
         execution: {
-          stdout,
-          stderr: stderr || null,
           timestamp: new Date().toISOString(),
+          success: parsedTerminal.success,
+          // Terminal output parsed into structured format
+          terminal: parsedTerminal.output.structured,
+          // Raw terminal output for reference
+          rawOutput: {
+            stdout: stdout || null,
+            stderr: stderr || null,
+          },
+          // Errors and warnings
+          errors: parsedTerminal.output.errors || [],
+          warnings: parsedTerminal.output.warnings || [],
         },
+        // Parsed output files (if available)
+        files: parsedFiles ? {
+          nodes: parsedFiles.data?.nodes || [],
+          datacenters: parsedFiles.data?.datacenters || {},
+          hostnames: parsedFiles.data?.hostnames || {},
+          tokenMappings: parsedFiles.data?.tokenMappings || [],
+          summary: parsedFiles.data?.summary || {
+            totalNodes: 0,
+            totalTokens: 0,
+            totalDatacenters: 0,
+          },
+          fileSummary: parsedFiles.parsed?.summary || {
+            totalFiles: 0,
+            txtFiles: 0,
+            jsonFiles: 0,
+            fileTypes: [],
+          },
+        } : null,
       },
     });
   })
