@@ -66,7 +66,7 @@ app.listen(PORT, () => {
   console.log(`🚀 TokenSim REST API server running on port ${PORT}`);
   console.log(`📁 Volume path: ${config.volumePath}`);
   console.log(`🐳 TokenSim container: ${config.tokensimContainerName}`);
-  console.log(`🔐 JWT authentication: ${config.jwtSecret ? 'enabled' : 'disabled'}`);
+  console.log(`🔐 API Token authentication: ${config.apiToken ? 'enabled' : 'disabled'}`);
 });
 
 export default app;

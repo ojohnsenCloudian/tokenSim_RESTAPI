@@ -1,7 +1,6 @@
-// JWT authentication middleware
+// Simple token authentication middleware
 
 import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
 import { config } from '../utils/config';
 import { sendError, AppError } from '../utils/errors';
 
@@ -24,13 +23,13 @@ export const authenticateToken = (
     return;
   }
 
-  try {
-    const decoded = jwt.verify(token, config.jwtSecret) as { userId: string };
-    req.user = { userId: decoded.userId };
-    next();
-  } catch (error) {
-    sendError(res, new AppError('Invalid or expired token', 401));
+  // Simple token comparison
+  if (token !== config.apiToken) {
+    sendError(res, new AppError('Invalid token', 401));
     return;
   }
+
+  req.user = { userId: 'api-user' };
+  next();
 };
 

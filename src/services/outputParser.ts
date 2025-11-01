@@ -14,6 +14,9 @@ interface ParsedFile {
     lineCount?: number;
     tokenCount?: number;
     ipCount?: number;
+    format?: string;
+    parseError?: string;
+    [key: string]: any;
   };
 }
 

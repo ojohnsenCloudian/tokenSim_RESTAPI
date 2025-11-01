@@ -10,7 +10,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./data:/home/ats/files
     environment:
-      - JWT_SECRET=${JWT_SECRET:-your-secret-key-change-in-production}
+      - API_TOKEN=${API_TOKEN:-your-api-token-change-in-production}
       - PORT=3443
       - TOKENSIM_CONTAINER_NAME=ats-runtime
       - VOLUME_PATH=/home/ats/files

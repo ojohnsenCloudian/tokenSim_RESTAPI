@@ -33,7 +33,7 @@ REST API for TokenSim CLI tool that enables programmatic access to manual mode s
 
 4. Set up environment variables (copy `.env.example` to `.env`):
    ```bash
-   JWT_SECRET=your-secret-key-change-in-production
+   API_TOKEN=your-secure-api-token-here
    PORT=3443
    TOKENSIM_CONTAINER_NAME=ats-runtime
    VOLUME_PATH=/home/ats/files
@@ -54,7 +54,7 @@ docker run -d \
   -p 3443:3443 \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v /path/to/shared/volume:/home/ats/files \
-  -e JWT_SECRET=your-secret-key \
+  -e API_TOKEN=your-secure-api-token \
   -e TOKENSIM_CONTAINER_NAME=ats-runtime \
   tokensim-rest-api
 ```
@@ -66,7 +66,7 @@ docker-compose up -d
 
 ## API Endpoints
 
-All endpoints require JWT authentication via `Authorization: Bearer <token>` header.
+All endpoints require API token authentication via `Authorization: Bearer <token>` header.
 
 ### Customer Management
 - `POST /api/customers` - Create customer folder
@@ -164,7 +164,7 @@ npm run dev
 
 ## Environment Variables
 
-- `JWT_SECRET` - JWT signing secret (required)
+- `API_TOKEN` - API authentication token (required)
 - `PORT` - Server port (default: 3443)
 - `TOKENSIM_CONTAINER_NAME` - Docker container name (default: ats-runtime)
 - `VOLUME_PATH` - Path to shared volume (default: /home/ats/files)
