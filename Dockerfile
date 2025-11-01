@@ -11,8 +11,9 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci
+# Install all dependencies (including dev dependencies for build)
+# Set NODE_ENV to empty to ensure dev dependencies are installed
+RUN NODE_ENV= npm ci
 
 # Copy source code
 COPY . .
@@ -20,7 +21,7 @@ COPY . .
 # Build TypeScript
 RUN npm run build
 
-# Remove dev dependencies
+# Remove dev dependencies after build
 RUN npm prune --production
 
 # Expose port
