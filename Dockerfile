@@ -17,8 +17,8 @@ RUN npm install
 # Copy source code
 COPY . .
 
-# Build TypeScript using npm script (uses local tsc)
-RUN npm run build
+# Build TypeScript using direct path to tsc binary
+RUN node_modules/.bin/tsc
 
 # Remove dev dependencies after build
 RUN npm prune --production
